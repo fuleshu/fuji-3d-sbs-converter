@@ -3,6 +3,7 @@ from pathlib import Path
 import struct
 import subprocess
 import shutil
+from PIL import Image
 
 
 def extract_and_create_sbs_with_audio(input_video_or_folder, output_folder):
@@ -14,7 +15,6 @@ def extract_and_create_sbs_with_audio(input_video_or_folder, output_folder):
             output_path.mkdir(parents=True, exist_ok=True)
 
         avi_files = []
-
         if input_path.is_file() and input_path.suffix.lower() == ".avi":
             avi_files = [input_path]
         elif input_path.is_dir():
@@ -30,6 +30,7 @@ def extract_and_create_sbs_with_audio(input_video_or_folder, output_folder):
             combined_folder = temp_folder / "sbs_frames"
             combined_folder.mkdir(parents=True, exist_ok=True)
 
+            # Extract framerate using ffprobe
             probe_cmd = [
                 "ffprobe", "-v", "error",
                 "-select_streams", "v:0",
@@ -45,6 +46,7 @@ def extract_and_create_sbs_with_audio(input_video_or_folder, output_folder):
             else:
                 framerate = float(framerate_raw) if framerate_raw else 30
 
+            # Extract audio
             audio_file = temp_folder / "audio.m4a"
             audio_cmd = [
                 "ffmpeg", "-y", "-i", str(avi_file),
@@ -55,10 +57,10 @@ def extract_and_create_sbs_with_audio(input_video_or_folder, output_folder):
             left_count = 0
             right_count = 0
 
+            # Extract frames
             with open(avi_file, 'rb') as f:
                 riff_header = f.read(12)
                 riff_id, riff_size, riff_format = struct.unpack('<4sI4s', riff_header)
-
                 if riff_id != b'RIFF' or riff_format != b'AVI ':
                     results.append(f"Skipping {avi_file.name}: Not a valid AVI.")
                     continue
@@ -111,17 +113,24 @@ def extract_and_create_sbs_with_audio(input_video_or_folder, output_folder):
                 results.append(f"Extraction failed: {avi_file.name}: Left {left_count}, Right {right_count}")
                 continue
 
+            # Merge images using PIL
             for idx in range(min_frames):
+                left_img_path = temp_folder / f"left_{idx:04d}.jpg"
+                right_img_path = temp_folder / f"right_{idx:04d}.jpg"
                 combined_file = combined_folder / f"sbs_{idx:04d}.jpg"
-                cmd = [
-                    "ffmpeg", "-y",
-                    "-i", str(temp_folder / f"left_{idx:04d}.jpg"),
-                    "-i", str(temp_folder / f"right_{idx:04d}.jpg"),
-                    "-filter_complex", "hstack",
-                    str(combined_file)
-                ]
-                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+                left_img = Image.open(left_img_path)
+                right_img = Image.open(right_img_path)
+
+                new_width = left_img.width + right_img.width
+                new_height = max(left_img.height, right_img.height)
+
+                sbs_img = Image.new('RGB', (new_width, new_height))
+                sbs_img.paste(left_img, (0, 0))
+                sbs_img.paste(right_img, (left_img.width, 0))
+                sbs_img.save(combined_file, quality=95)
+
+            # Create video
             sbs_video = output_path / f"{avi_file.stem}_SBS_noaudio.mp4"
             cmd_video = [
                 "ffmpeg", "-y",
@@ -133,6 +142,7 @@ def extract_and_create_sbs_with_audio(input_video_or_folder, output_folder):
             ]
             subprocess.run(cmd_video, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+            # Mux audio
             final_output = output_path / f"{avi_file.stem}_SBS.mp4"
             cmd_mux = [
                 "ffmpeg", "-y",
@@ -167,6 +177,7 @@ def main():
         title="Fuji 3D → SBS MP4 Batch Converter",
         description="Convert one AVI or a folder of AVIs to SBS MP4 with audio."
     ).launch()
+
 
 if __name__ == "__main__":
     main()

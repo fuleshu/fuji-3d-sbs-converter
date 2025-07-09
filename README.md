@@ -31,7 +31,7 @@ conda activate fuji3d
 3. Install required Python packages:
 
 ```bash
-pip install gradio
+pip install gradio pillow
 ```
 
 4. Download and install **ffmpeg** and **ffprobe**:
