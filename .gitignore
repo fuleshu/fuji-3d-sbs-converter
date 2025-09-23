@@ -208,3 +208,4 @@ __marimo__/
 ffmpeg.exe
 ffprobe.exe
 /.vscode
+/turbojpeg.dll
